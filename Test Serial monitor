@@ -1,0 +1,144 @@
+#include <Wire.h>
+
+// Same pins and motor driver as your code (speed goes on the IN pins, no enable pins)
+int IN1 = 4,  IN2 = 3;    // Motor 1 (Front Left in omniDrive)
+int IN3 = 9, IN4 = 10;   // Motor 2 (Front Right in omniDrive)
+int IN5 = 7,  IN6 = 6;    // Motor 3 (Rear Right in omniDrive)
+int IN7 = 12,  IN8 = 11;   // Motor 4 (Rear Left in omniDrive)
+
+int testSpeed = 120;                 // 0-255
+const unsigned long RUN_MS = 2000;   // auto-stop after this long
+int selMotor = 1;                    // currently selected motor (1-4)
+unsigned long stopAt = 0;
+
+void motor(int in1, int in2, int spd) {
+  spd = constrain(spd, -255, 255);
+  if (spd > 0) {
+    analogWrite(in1, spd);
+    analogWrite(in2, 0);
+  } else if (spd < 0) {
+    analogWrite(in1, 0);
+    analogWrite(in2, -spd);   // positive PWM value
+  } else {
+    analogWrite(in1, 0);
+    analogWrite(in2, 0);
+  }
+}
+
+void setMotor(int n, int spd) {
+  switch (n) {
+    case 1: motor(IN1, IN2, spd); break;
+    case 2: motor(IN3, IN4, spd); break;
+    case 3: motor(IN5, IN6, spd); break;
+    case 4: motor(IN7, IN8, spd); break;
+  }
+}
+
+// Same kinematics as your main code (no rotation)
+void omniDrive(int vx, int vy) {
+  motor(IN1, IN2, vx + vy);  // Front Left
+  motor(IN3, IN4, vx - vy);  // Front Right
+  motor(IN5, IN6, vx + vy);  // Rear Right
+  motor(IN7, IN8, vx - vy);  // Rear Left
+}
+
+// Forces every motor pin LOW (also switches off PWM on that pin)
+void stopAll() {
+  int pins[] = {IN1, IN2, IN3, IN4, IN5, IN6, IN7, IN8};
+  for (int i = 0; i < 8; i++) {
+    digitalWrite(pins[i], LOW);
+  }
+}
+
+void printHelp() {
+  Serial.println(F("--- Soccer robot motor test ---"));
+  Serial.println(F("1-4 : select motor"));
+  Serial.println(F("+   : selected motor forward"));
+  Serial.println(F("-   : selected motor backward"));
+  Serial.println(F("w   : robot forward"));
+  Serial.println(F("s   : robot backward"));
+  Serial.println(F("a   : robot left"));
+  Serial.println(F("d   : robot right"));
+  Serial.println(F("x   : stop (also spacebar or any unknown key)"));
+  Serial.println(F("u/j : speed up / down"));
+  Serial.println(F("h   : help"));
+  Serial.print(F("Speed = ")); Serial.println(testSpeed);
+}
+
+void setup() {
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(IN5, OUTPUT); pinMode(IN6, OUTPUT);
+  pinMode(IN7, OUTPUT); pinMode(IN8, OUTPUT);
+  stopAll();
+
+  Serial.begin(115200);
+  printHelp();
+}
+
+void loop() {
+  // Safety auto-stop
+  if (stopAt && millis() >= stopAt) {
+    stopAll();
+    stopAt = 0;
+    Serial.println(F("Auto-stop"));
+  }
+
+  if (!Serial.available()) return;
+  char c = tolower(Serial.read());
+  if (c == '\n' || c == '\r') return;
+  if (c == ' ') c = 'x';   // spacebar = emergency stop
+
+  switch (c) {
+    case '1': case '2': case '3': case '4':
+      stopAll();
+      selMotor = c - '0';
+      Serial.print(F("Selected motor ")); Serial.println(selMotor);
+      return;
+
+    case '+':
+      stopAll();
+      setMotor(selMotor, testSpeed);
+      Serial.print(F("Motor ")); Serial.print(selMotor); Serial.println(F(" FORWARD"));
+      break;
+
+    case '-':
+      stopAll();
+      setMotor(selMotor, -testSpeed);
+      Serial.print(F("Motor ")); Serial.print(selMotor); Serial.println(F(" BACKWARD"));
+      break;
+
+    case 'w': stopAll(); omniDrive( testSpeed, 0); Serial.println(F("FORWARD"));  break;
+    case 's': stopAll(); omniDrive(-testSpeed, 0); Serial.println(F("BACKWARD")); break;
+    case 'a': stopAll(); omniDrive(0, -testSpeed); Serial.println(F("LEFT"));     break;
+    case 'd': stopAll(); omniDrive(0,  testSpeed); Serial.println(F("RIGHT"));    break;
+
+    case 'x':
+      stopAll();
+      stopAt = 0;
+      Serial.println(F("STOP"));
+      return;
+
+    case 'u':
+      testSpeed = min(255, testSpeed + 20);
+      Serial.print(F("Speed = ")); Serial.println(testSpeed);
+      return;
+
+    case 'j':
+      testSpeed = max(0, testSpeed - 20);
+      Serial.print(F("Speed = ")); Serial.println(testSpeed);
+      return;
+
+    case 'h':
+      printHelp();
+      return;
+
+    default:
+      stopAll();
+      stopAt = 0;
+      Serial.println(F("Unknown command, stopped (h = help)"));
+      return;
+  }
+
+  stopAt = millis() + RUN_MS;   // restart auto-stop timer after any move
+}
