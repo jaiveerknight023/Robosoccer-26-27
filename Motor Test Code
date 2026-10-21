@@ -1,0 +1,90 @@
+// Motor test for Arduino Mega 2560: front, back, left, right
+
+// ---------- Pins ----------
+#define FL_IN1 4
+#define FL_IN2 3
+#define FL_EN  2
+
+#define FR_IN1 9
+#define FR_IN2 10
+#define FR_EN  8
+
+#define RR_IN1 7
+#define RR_IN2 6
+#define RR_EN  5
+
+#define RL_IN1 12
+#define RL_IN2 15
+#define RL_EN  11
+
+// ---------- Settings ----------
+const int  SPEED = 150;        // 0-255
+const bool WHEEL_TEST = true;  // true = spin each wheel alone first
+
+// If a wheel spins backward during the wheel test, change its value to -1
+const int DIR_FL = 1;
+const int DIR_FR = 1;
+const int DIR_RR = 1;
+const int DIR_RL = 1;
+
+// ---------- Motor control ----------
+// dir: 1 = forward, -1 = backward, 0 = stop
+void setMotor(int in1, int in2, int en, int dir, int invert) {
+  dir *= invert;
+  digitalWrite(in1, dir > 0 ? HIGH : LOW);
+  digitalWrite(in2, dir < 0 ? HIGH : LOW);
+  analogWrite(en, dir == 0 ? 0 : SPEED);
+}
+
+// Order: FL, FR, RR, RL
+void drive(int fl, int fr, int rr, int rl) {
+  setMotor(FL_IN1, FL_IN2, FL_EN, fl, DIR_FL);
+  setMotor(FR_IN1, FR_IN2, FR_EN, fr, DIR_FR);
+  setMotor(RR_IN1, RR_IN2, RR_EN, rr, DIR_RR);
+  setMotor(RL_IN1, RL_IN2, RL_EN, rl, DIR_RL);
+}
+
+// ---------- Movements ----------
+void front()      { drive( 1,  1,  1,  1); }
+void back()       { drive(-1, -1, -1, -1); }
+void left()       { drive(-1,  1, -1,  1); }  // strafe left
+void right()      { drive( 1, -1,  1, -1); }  // strafe right
+void stopMotors() { drive( 0,  0,  0,  0); }
+
+void run(const char *name, void (*move)(), int ms) {
+  Serial.println(name);
+  move();
+  delay(ms);
+  stopMotors();
+  delay(500);  // pause protects the driver and battery
+}
+
+// ---------- Setup ----------
+void setup() {
+  Serial.begin(115200);
+
+  int pins[] = {FL_IN1, FL_IN2, FL_EN, FR_IN1, FR_IN2, FR_EN,
+                RR_IN1, RR_IN2, RR_EN, RL_IN1, RL_IN2, RL_EN};
+  for (int i = 0; i < 12; i++) pinMode(pins[i], OUTPUT);
+
+  stopMotors();
+  delay(2000);
+
+  if (WHEEL_TEST) {
+    Serial.println(F("Wheel test: each wheel should spin forward"));
+    Serial.println("FL"); drive(1, 0, 0, 0); delay(1500); stopMotors(); delay(500);
+    Serial.println("FR"); drive(0, 1, 0, 0); delay(1500); stopMotors(); delay(500);
+    Serial.println("RR"); drive(0, 0, 1, 0); delay(1500); stopMotors(); delay(500);
+    Serial.println("RL"); drive(0, 0, 0, 1); delay(1500); stopMotors(); delay(500);
+    delay(2000);
+  }
+}
+
+// ---------- Loop ----------
+void loop() {
+  run("Front", front, 2000);
+  run("Back",  back,  2000);
+  run("Left",  left,  2000);
+  run("Right", right, 2000);
+  delay(3000);
+}
