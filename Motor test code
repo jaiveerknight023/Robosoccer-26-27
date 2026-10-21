@@ -1,0 +1,82 @@
+// Motor pins (same as your main code)
+int IN1 = 2,  IN2 = 3,  ENA = 5;    // Motor 1 - Front Left
+int IN3 = 4,  IN4 = 7,  ENB = 6;    // Motor 2 - Front Right
+int IN5 = 8,  IN6 = 9,  ENC = 10;   // Motor 3 - Rear Right
+int IN7 = 12, IN8 = 13, END = 11;   // Motor 4 - Rear Left
+
+const int SPEED = 150;        // 0-255
+const bool TEST_MODE = true;  // true = spin each wheel alone first
+
+// Generic motor driver
+void motor(int in1, int in2, int en, int spd) {
+  if (spd > 0) {
+    digitalWrite(in1, HIGH);
+    digitalWrite(in2, LOW);
+  } else if (spd < 0) {
+    digitalWrite(in1, LOW);
+    digitalWrite(in2, HIGH);
+  } else {
+    digitalWrite(in1, LOW);
+    digitalWrite(in2, LOW);
+  }
+  analogWrite(en, abs(spd));
+}
+
+// Same kinematics as your main code (no rotation)
+void drive(int vx, int vy) {
+  int w1 = vx + vy;  // Front Left
+  int w2 = vx - vy;  // Front Right
+  int w3 = vx + vy;  // Rear Right
+  int w4 = vx - vy;  // Rear Left
+
+  w1 = constrain(w1, -255, 255);
+  w2 = constrain(w2, -255, 255);
+  w3 = constrain(w3, -255, 255);
+  w4 = constrain(w4, -255, 255);
+
+  motor(IN1, IN2, ENA, w1);
+  motor(IN3, IN4, ENB, w2);
+  motor(IN5, IN6, ENC, w3);
+  motor(IN7, IN8, END, w4);
+}
+
+void forward()    { drive( SPEED, 0); }
+void backward()   { drive(-SPEED, 0); }
+void left()       { drive(0, -SPEED); }
+void right()      { drive(0,  SPEED); }
+void stopMotors() { drive(0, 0); }
+
+void run(void (*move)(), int ms) {
+  move();
+  delay(ms);
+  stopMotors();
+  delay(400);  // brief pause protects the driver and battery
+}
+
+void setup() {
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(ENA, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(ENB, OUTPUT);
+  pinMode(IN5, OUTPUT); pinMode(IN6, OUTPUT); pinMode(ENC, OUTPUT);
+  pinMode(IN7, OUTPUT); pinMode(IN8, OUTPUT); pinMode(END, OUTPUT);
+
+  Serial.begin(115200);
+  stopMotors();
+  delay(2000);
+
+  if (TEST_MODE) {
+    // Each wheel should spin in its "forward" direction, one at a time
+    Serial.println("FL");  motor(IN1, IN2, ENA, SPEED); delay(1500); stopMotors(); delay(500);
+    Serial.println("FR");  motor(IN3, IN4, ENB, SPEED); delay(1500); stopMotors(); delay(500);
+    Serial.println("RR");  motor(IN5, IN6, ENC, SPEED); delay(1500); stopMotors(); delay(500);
+    Serial.println("RL");  motor(IN7, IN8, END, SPEED); delay(1500); stopMotors(); delay(500);
+    delay(2000);
+  }
+}
+
+void loop() {
+  Serial.println("Forward");  run(forward,  2000);
+  Serial.println("Backward"); run(backward, 2000);
+  Serial.println("Left");     run(left,     2000);
+  Serial.println("Right");    run(right,    2000);
+  delay(3000);
+}
