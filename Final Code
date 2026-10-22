@@ -1,0 +1,236 @@
+#include "Wire.h"
+#include <MPU6050_light.h>
+
+// ---------------- IR SENSORS ----------------
+// Six sensors arranged in a 120-degree arc
+// Order: right to left
+int sensorPin[6] = { A1, A3, A5, A7, A9, A11 };
+
+float smooth[6] = { 0, 0, 0, 0, 0, 0 };
+float alpha = 0.1;
+int lastPosition = 2500;
+int Threshold = 1500;
+
+#define NUM_SENSORS 6
+
+// Sensor positions across the 120-degree arc.
+// A1 is rightmost; A11 is leftmost.
+const int sensorPosition[NUM_SENSORS] = {
+  0, 1000, 2000, 3000, 4000, 5000
+};
+
+// ---------------- MOTOR PINS (no enable pins) ----------------
+int IN1 = 4,  IN2 = 3;     // Motor 1 (Front Left in omniDrive)
+int IN3 = 9,  IN4 = 10;    // Motor 2 (Front Right in omniDrive)
+int IN5 = 7,  IN6 = 6;     // Motor 3 (Rear Right in omniDrive)
+int IN7 = 12, IN8 = 11;    // Motor 4 (Rear Left in omniDrive)
+
+// ---------------- MPU6050 / GYRO ----------------
+MPU6050 mpu(Wire);
+
+float targetAngle = 0;
+float Kp = 5.0;
+
+// ---------------- SETUP ----------------
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+
+  // Motor pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(IN5, OUTPUT);
+  pinMode(IN6, OUTPUT);
+  pinMode(IN7, OUTPUT);
+  pinMode(IN8, OUTPUT);
+
+  // Initialize all six IR sensors
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    smooth[i] = analogRead(sensorPin[i]);
+  }
+
+  // Initialize MPU6050
+  byte status = mpu.begin();
+
+  Serial.print(F("MPU6050 status: "));
+  Serial.println(status);
+
+  while (status != 0) {
+    // Stop if MPU6050 cannot connect
+  }
+
+  Serial.println(F("Calculating offsets, do not move MPU6050"));
+  delay(1000);
+
+  mpu.calcOffsets();
+
+  calcThreshold();
+
+  Serial.println(F("Setup complete!"));
+}
+
+// ---------------- MOTOR CONTROL ----------------
+// Speed is sent on the IN pins (no enable pin)
+void motor(int in1, int in2, int spd) {
+  if (spd > 0) {
+    analogWrite(in1, spd);
+    analogWrite(in2, 0);
+  }
+  else if (spd < 0) {
+    analogWrite(in1, 0);
+    analogWrite(in2, abs(spd));
+  }
+  else {
+    analogWrite(in1, 0);
+    analogWrite(in2, 0);
+  }
+}
+
+// ---------------- MAIN LOOP ----------------
+void loop() {
+
+  // Original ball-follow movement calculation
+  int error = (2500 - ballPos()) / 10;
+
+  float angle = (error / 150.0) * (135.0 * PI / 180.0);
+
+  int vx = (int)(120 * cos(angle));
+  int vy = (int)(120 * sin(angle));
+
+  omniDriveWithGyro(vx, vy, 0);
+}
+
+// ---------------- IR THRESHOLD CALCULATION ----------------
+void calcThreshold() {
+  float total = 0;
+
+  for (int j = 0; j < 100; j++) {
+
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      smooth[i] = analogRead(sensorPin[i]);
+    }
+
+    float sum = 0;
+
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      sum += smooth[i];
+    }
+
+    total += sum / NUM_SENSORS;
+  }
+
+  total /= 100;
+  total = total * 1.2;
+
+  Threshold = total;
+
+  Serial.print(F("IR Threshold: "));
+  Serial.println(Threshold);
+}
+
+// ---------------- OMNI DRIVE ----------------
+void omniDrive(int vx, int vy, int wz) {
+  int w1 = vx + vy - wz;  // Front Left
+  int w2 = vx - vy + wz;  // Front Right
+  int w3 = vx + vy + wz;  // Rear Right
+  int w4 = vx - vy - wz;  // Rear Left
+
+  w1 = constrain(w1, -255, 255);
+  w2 = constrain(w2, -255, 255);
+  w3 = constrain(w3, -255, 255);
+  w4 = constrain(w4, -255, 255);
+
+  motor(IN1, IN2, w1);
+  motor(IN3, IN4, w2);
+  motor(IN5, IN6, w3);
+  motor(IN7, IN8, w4);
+}
+
+// ---------------- OMNI DRIVE WITH GYRO ----------------
+void omniDriveWithGyro(int vx, int vy, int vz) {
+  mpu.update();
+
+  float gyroAngle = mpu.getAngleZ();
+
+  // Calculate heading error
+  float error = targetAngle - gyroAngle;
+
+  // Normalize error to -180..180
+  if (error > 180) error -= 360;
+  if (error < -180) error += 360;
+
+  // Proportional rotation correction
+  int wz = Kp * error;
+
+  // Limit rotation speed
+  if (wz > 100) wz = 100;
+  if (wz < -100) wz = -100;
+
+  // Original omni-drive equations
+  int w1 = vx + vy - wz;  // Front Left
+  int w2 = vx - vy + wz;  // Front Right
+  int w3 = vx + vy + wz;  // Rear Right
+  int w4 = vx - vy - wz;  // Rear Left
+
+  w1 = constrain(w1, -255, 255);
+  w2 = constrain(w2, -255, 255);
+  w3 = constrain(w3, -255, 255);
+  w4 = constrain(w4, -255, 255);
+
+  Serial.print(w1);
+  Serial.print(",");
+  Serial.print(w2);
+  Serial.print(",");
+  Serial.print(w3);
+  Serial.print(",");
+  Serial.println(w4);
+
+  // Drive motors
+  motor(IN1, IN2, w1);
+  motor(IN3, IN4, w2);
+  motor(IN5, IN6, w3);
+  motor(IN7, IN8, w4);
+}
+
+// ---------------- BALL POSITION ----------------
+int ballPos() {
+  bool online = false;
+  long weightedSum = 0;
+  long total = 0;
+  int position = 0;
+
+  // Read all six IR sensors
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    int raw = analogRead(sensorPin[i]);
+
+    // Original EMA smoothing
+    smooth[i] = alpha * raw + (1 - alpha) * smooth[i];
+
+    // Original detection threshold
+    if (smooth[i] > 60) {
+      online = true;
+
+      weightedSum += (long)smooth[i] * sensorPosition[i];
+      total += smooth[i];
+    }
+  }
+
+  if (!online || total == 0) {
+    // No ball detected: preserve last known side
+    if (lastPosition > 2500) {
+      return 5000;
+    }
+    else {
+      return 0;
+    }
+  }
+
+  // Calculate weighted position across all six sensors
+  position = weightedSum / total;
+
+  lastPosition = position;
+
+  return position;
+}
